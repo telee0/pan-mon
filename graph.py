@@ -3,8 +3,124 @@ import numpy as np
 
 matplotlib.use("TkAgg")
 
-import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+
+class Graph3D:
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+        plt.ion()
+        print(matplotlib.get_backend())
+
+        self.fig = plt.figure(figsize=(12, 7))
+        self.ax = self.fig.add_subplot(111, projection='3d')
+
+        self.colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        self._setup_axes()
+
+    def _setup_axes(self):
+        # self.ax.set_xlabel("Time", labelpad=20, rotation=0)
+        # self.ax.set_ylabel("DP", labelpad=15)
+        self.ax.set_zlabel("Util %", labelpad=10)
+        self.ax.set_zlim(0, 100)
+
+        self.ax.view_init(elev=25,azim=-60)
+        self.ax.dist = 6.0
+
+        self.ax.set_box_aspect((6, 6, 3))
+
+        self.ax.xaxis.pane.fill = False
+        self.ax.yaxis.pane.fill = False
+        self.ax.zaxis.pane.fill = False
+
+    def update(self):
+        history = self.ctx["history"]
+
+        if len(history) < 2:
+            return
+
+        self.ax.cla()
+        self._setup_axes()
+
+        dp_names = sorted(list(history[-1]["dp"].keys()))
+        n = len(dp_names)
+
+        x0, xn = 0, 0
+        ax_text = []
+
+        for dp_index, dp_name in enumerate(dp_names, start=1):
+            x, y, z = [], n - dp_index, []
+
+            for sample in history:
+                x.append(mdates.date2num(sample["time_stamp"]))
+                cpu = sample["dp"][dp_name]["cpu-load-maximum"]
+                values = [core[1] for core in cpu.values()]
+                z.append(sum(values) / len(values) if values else 0)
+
+            x0, xn = x[0], x[-1]
+
+            color = self.colors[dp_index % len(self.colors)]
+
+            verts_x = np.concatenate([[x[0]], x, [x[-1]]])
+            verts_y = np.full_like(verts_x, y)  # Keep Y positive and aligned
+            verts_z = np.concatenate([[0], z, [0]])
+
+            verts = [list(zip(verts_x, verts_y, verts_z))]
+
+            poly = Poly3DCollection(
+                verts,
+                facecolors=color,
+                edgecolors=color,
+                alpha=0.35,
+                linewidths=1
+            )
+            self.ax.add_collection3d(poly)
+
+            y_line = np.full_like(x, y)
+
+            self.ax.plot(
+                x,
+                y_line,
+                z,
+                linewidth=2,
+                color=color,
+                label=dp_name
+            )
+
+            ax_text.append((x[-1], y, z[-1], color))
+
+        for x, y, z, color in reversed(ax_text):
+            self.ax.text(
+                x, y, z,
+                f"{z:.1f}%",
+                fontsize=8,
+                color=color,
+                ha="right",
+                va="top"
+            )
+
+        self.ax.set_xlim(x0, xn)
+        self.ax.set_ylim(n, -0.5)
+        self.ax.set_yticks(range(n))
+        self.ax.set_yticklabels(reversed(dp_names))
+        self.ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
+        self.fig.autofmt_xdate(bottom=0.25, rotation=0, ha='center')
+
+        self.ax.set_title("Dataplane CPU Utilization", fontsize=16, pad=5, loc='center')
+        self.ax.legend(loc='upper left', bbox_to_anchor=(0.95, 1.05), ncols=(n + 7) // 8,
+                       frameon=True, facecolor='white', framealpha=0.8)
+
+        self.fig.subplots_adjust(left=0.01, right=0.99, bottom=0.08, top=0.92)
+
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
+        plt.pause(0.001)
+
+    def close(self):
+        plt.close('all')
 
 
 class Graph:
@@ -109,3 +225,6 @@ class Graph:
         self.fig.canvas.flush_events()
 
         plt.pause(0.01)
+
+    def close(self):
+        plt.close('all')
